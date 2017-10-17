@@ -2,4 +2,7 @@
 *.bin
 tiled2ctile
 *.csv
+*.vim
+extra.txt
+*.swp
 *.tmx

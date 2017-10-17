@@ -3,13 +3,19 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <allegro5/allegro.h>
+
+#include "ctile/ctile.h"
+#include "macro.h"
 
 //READS FROM tiled exported .csv and WRITEs ctile- compatiblle file
 
 const char* HELP =
-"tiled2ctile [map] [metadata] [tile page] [[out or stdout]]\n";
+"tiled2ctile [map] [metadata] [tile page] [[out or stdout]] [[extra (type+attributes)]]\n";
 
 int count_chars(FILE*, char);
+
+ctile_tile** tiles;
 
 int main(int argc, char** argv) {
 	if (argc < 4) {
@@ -30,9 +36,18 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "cant open %s\n", argv[1]);
 		return 1;
 	}
-	if (argc == 5) {
+	if (argc >= 5) {
 		if (!(output = fopen(argv[4], "wb"))) {
 			fprintf(stderr, "cant open %s", argv[4]);
+			return 1;
+		}
+	}
+
+	FILE* extra = NULL;
+
+	if (argc >= 6) {
+		if (!(extra = fopen(argv[5], "r"))) {
+			fprintf(stderr, "cant open %s", argv[5]);
 			return 1;
 		}
 	}
@@ -47,21 +62,25 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "WIDTH: %i, HEIGHT: %i, COMMAS: %i\n", width, height ,commas);
 
+	tiles = calloc(width*height, sizeof(ctile_tile));
+
 	#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 	//NOW CHANGE TO BIG ENDIAN . format uses bigendian
-	width = (width<<8) | (width>>8);
-	height = (height<<8) | (height>>8);
+	uint16_t width_be = (width<<8) | (width>>8);
+	uint16_t height_be = (height<<8) | (height>>8);
 	#endif
 
 	//WRITE HEADER
 	fwrite("ctile", 1, 5, output);
-	fwrite(&width,  1, 2, output);
-	fwrite(&height, 1, 2, output);
+	fwrite(&width_be,  1, 2, output);
+	fwrite(&height_be, 1, 2, output);
 	uint8_t page8 = (uint8_t)page;
 	fwrite(&page8,  1, 1, output);
 	char metadata[16];
 	memcpy(metadata, argv[2], 16);
 	fwrite(metadata,1,16, output);
+
+	int header_offset = ftell(output);
 
 	//WRITE DATA
 	fseek(input, 0, SEEK_SET);
@@ -99,9 +118,35 @@ int main(int argc, char** argv) {
 		}
 	}
 	fprintf(stderr, "total elements: %i\n", total);
-	fclose(output);
 	fclose(input);
-	
+
+	if (extra) {
+		int x = 0, y = 0;
+
+		char* line = NULL; size_t n = 0;
+		while (!feof(extra) && !ferror(extra)) {
+			getline(&line, &n, extra);
+			#define errer() fprintf(stderr, "error at extras file.\n")
+
+			int arg = 0;
+			
+			if (*line == '#') continue; //comment
+			if (sscanf(line, "tile %i %i", &x, &y) == 2);
+			else if (sscanf(line, "type %i", &arg)) {
+				fprintf(stderr, "TYPE %i of %i,%i\n", arg, x, y);
+				fseek(output, header_offset + ((x+y*width)*3) + 1, SEEK_SET);
+				fputc(arg, output);
+			} else if (sscanf(line, "atts %i", &arg)) {
+				fseek(output, header_offset + ((x+y*width)*3) + 2, SEEK_SET);
+				fputc(arg, output);
+			}
+		}
+
+		free(line);
+	}
+
+	fclose(output);
+	if (extra) fclose(extra);	
 }
 
 
