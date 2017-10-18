@@ -6,7 +6,7 @@
 #include <allegro5/allegro.h>
 
 #include "ctile/ctile.h"
-#include "macro.h"
+#include "macros.h"
 
 //READS FROM tiled exported .csv and WRITEs ctile- compatiblle file
 
@@ -89,12 +89,12 @@ int main(int argc, char** argv) {
 	int neg = 0;
 	int total = 0;
 	while ((c = fgetc(input)) != EOF) {
-		fprintf(stderr, "[%c]", c);
+//		fprintf(stderr, "[%c]", c);
 		if (c == ',' || c == '\n') {
 			//flush
 			total++;
 			if (neg) id = 0;
-			fprintf(stderr, "final %X\n", id);
+//			fprintf(stderr, "final %X\n", id);
 			fwrite(&id, 1, 1, output);
 			//TYPE and ATTRIBUTE
 			unsigned char one = 1;
@@ -107,12 +107,12 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if (isdigit(c)) {
-			fprintf(stderr, ".id before; %i, %c.", id, c);
+//			fprintf(stderr, ".id before; %i, %c.", id, c);
 			id = id * 10 + c-'0';
-			fprintf(stderr, ".now %i.", id);
+//			fprintf(stderr, ".now %i.", id);
 		} else if (c == '-') {
 			neg = 1;
-			fprintf(stderr, ".negate.");
+//			fprintf(stderr, ".negate.");
 		} else {
 			fprintf(stderr, "uknown char %c\n", c);
 		}
@@ -129,13 +129,37 @@ int main(int argc, char** argv) {
 			#define errer() fprintf(stderr, "error at extras file.\n")
 
 			int arg = 0;
+			char arg_str[64] = "";
 			
 			if (*line == '#') continue; //comment
+			
 			if (sscanf(line, "tile %i %i", &x, &y) == 2);
-			else if (sscanf(line, "type %i", &arg)) {
+			
+			else if (sscanf(line, "include %s", arg_str)) {
+				if (*arg_str) {
+					char cmd[100];
+					snprintf(cmd, sizeof(cmd), "gcc -E -DT2C %s", arg_str);
+					FILE* f = popen(cmd, "r");
+					if (!f) {
+						fprintf(stderr, "CANT fopen macro file '%s': %s\n", arg_str, strerror(errno));
+					} else {
+						macro_read_file(f);
+					}
+				}
+
+			} else if (sscanf(line, "type %i", &arg) || sscanf(line, "type $%s", arg_str)) {
+				if (*arg_str) {
+					macro_t* m = macro_search(arg_str);
+					if (m) arg = m->val;
+					else {
+						fprintf(stderr, "unknow macro name %s\n", arg_str);
+						arg = 0;
+					}
+				}
 				fprintf(stderr, "TYPE %i of %i,%i\n", arg, x, y);
 				fseek(output, header_offset + ((x+y*width)*3) + 1, SEEK_SET);
 				fputc(arg, output);
+
 			} else if (sscanf(line, "atts %i", &arg)) {
 				fseek(output, header_offset + ((x+y*width)*3) + 2, SEEK_SET);
 				fputc(arg, output);
